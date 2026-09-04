@@ -1,19 +1,58 @@
-.env
-.env.*
-!.env.example
+# Python
 __pycache__/
 *.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environments
 .venv/
 venv/
-env/
-.pytest_cache/
-.streamlit/secrets.toml
+ENV/
+env.bak/
+venv.bak/
 
-# Generated forecast data
+# Environment Variables & Secrets
+.env
+.env.local
+.env.*.local
+
+# Generated forecast & data files
 *.parquet
-run_meta.json
+parquet/
+archive/
+output/
+*.xlsx
+*.csv
 
-# Local editor and OS files
+# Streamlit & IDE
+.streamlit/
+.idea/
 .vscode/
+*.swp
+*.swo
+
+# OS files
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db

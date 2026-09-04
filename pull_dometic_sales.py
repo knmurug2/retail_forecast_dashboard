@@ -116,6 +116,13 @@ left join CustCustomerV3Staging as cmp on cm.DOMPARENTACCOUNT = cmp.CUSTOMERACCO
 
 
 def get_connection():
+    required_keys = ["D365_SQL_SERVER", "D365_SQL_DATABASE", "D365_SQL_USER", "D365_SQL_PASSWORD"]
+    missing = [k for k in required_keys if not os.environ.get(k)]
+    if missing:
+        raise ValueError(
+            f"Missing required D365 SQL environment variables in .env: {missing}. "
+            f"Please configure them in your local .env file."
+        )
     import pymssql
     return pymssql.connect(
         server=os.environ["D365_SQL_SERVER"],
@@ -346,7 +353,9 @@ def main():
     if not segment_map.empty:
         print(f"  Segments found: {segment_map['SalesSegmentID'].nunique() if 'SalesSegmentID' in segment_map.columns else 0}")
 
-    os.makedirs(os.path.dirname(args.out), exist_ok=True)
+    out_dir = os.path.dirname(args.out)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
 
     # Detail line-level data can easily exceed Excel's 1,048,576-row-per-sheet
     # limit on a multi-year pull. Saved as parquet instead.

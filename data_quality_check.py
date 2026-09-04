@@ -329,7 +329,9 @@ def print_summary(checks: list):
 
 
 def save_report(checks: list, df: pd.DataFrame, out_path: str):
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    out_dir = os.path.dirname(out_path)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
 
     summary_rows = [{"Check": c.name, "Status": c.status, "Message": c.message,
                      "Flagged_Rows": len(c.detail_df)} for c in checks]

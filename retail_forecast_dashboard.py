@@ -347,7 +347,10 @@ if mode == "Single series":
     # visible and checkable every time, instead of needing to compute it
     # by hand whenever someone asks "does this roll up correctly?"
     if grain == "Total" and not show_dometic:
+        total_start = fc["MonthStart"].min() if not fc.empty else None
         div_sel = sel_df[sel_df["Grain"] == "Division"].copy()
+        if pd.notna(total_start):
+            div_sel = div_sel[div_sel.groupby("series_id")["MonthStart"].transform("min") == total_start]
         div_trim = div_sel[div_sel.groupby("series_id")["MonthStart"].rank(method="first") <= h_months]
         sum_of_divisions = div_trim["Forecast_Units"].sum()
         gap_pct = ((next_period / sum_of_divisions) - 1) * 100 if sum_of_divisions > 0 else None
@@ -367,15 +370,10 @@ if mode == "Single series":
     with st.expander("⬇️ Export to Excel"):
         scope = st.radio("What to export", ["Just this series", "Everything"], horizontal=True)
 
-        @st.cache_data(show_spinner="Preparing file...")
-        def build_excel_single(scope_key: str):
+        def build_excel_single(export_fc_df: pd.DataFrame, export_hs_df: pd.DataFrame):
             buf = io.BytesIO()
-            if scope_key == "series":
-                export_fc = fc[["MonthStart", "Model", "Forecast_Units"]].copy()
-                export_hs = hist[["MonthStart", "Units"]].copy()
-            else:
-                export_fc = sel_df.copy()
-                export_hs = hs_df.copy()
+            export_fc = export_fc_df.copy()
+            export_hs = export_hs_df.copy()
             export_fc["MonthStart"] = export_fc["MonthStart"].dt.strftime("%Y-%m")
             export_hs["MonthStart"] = export_hs["MonthStart"].dt.strftime("%Y-%m")
             with pd.ExcelWriter(buf, engine="openpyxl") as w:
@@ -385,8 +383,15 @@ if mode == "Single series":
             return buf.read()
 
         scope_key = "series" if scope == "Just this series" else "all"
-        xl_bytes = build_excel_single(scope_key)
-        fname = f"{series}_forecast.xlsx" if scope_key == "series" else "RV_Retail_Forecast_All.xlsx"
+        if scope_key == "series":
+            s_fc = fc[["MonthStart", "Model", "Forecast_Units"]].copy()
+            s_hs = hist[["MonthStart", "Units"]].copy()
+            xl_bytes = build_excel_single(s_fc, s_hs)
+            fname = f"{series}_forecast.xlsx"
+        else:
+            xl_bytes = build_excel_single(sel_df, hs_df)
+            fname = "RV_Retail_Forecast_All.xlsx"
+
         st.download_button("Download", data=xl_bytes, file_name=fname,
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                             use_container_width=True, key="dl_single")
@@ -517,7 +522,7 @@ elif mode == "Compare":
     fc_for_trend = g_fc_trim[g_fc_trim["series_id"].isin(shown_ids)]
     if not fc_for_trend.empty:
         first_fc_month = fc_for_trend.groupby("series_id")["MonthStart"].min()
-        current_anchor = first_fc_month.mode().iloc[0]
+        current_anchor = first_fc_month.max()
         live_ids = first_fc_month[first_fc_month == current_anchor].index
         n_stale = fc_for_trend["series_id"].nunique() - len(live_ids)
         fc_for_trend = fc_for_trend[fc_for_trend["series_id"].isin(live_ids)]
@@ -563,12 +568,11 @@ elif mode == "Compare":
         st.dataframe(tbl, hide_index=True, use_container_width=True)
 
     with st.expander("⬇️ Export to Excel"):
-        @st.cache_data(show_spinner="Preparing file...")
-        def build_excel_compare(grain_key: str, h: int):
+        def build_excel_compare(export_fc_df: pd.DataFrame, export_rank_df: pd.DataFrame, h: int):
             buf = io.BytesIO()
-            export_fc = g_fc_trim[["series_id", "MonthStart", "Model", "Forecast_Units"]].copy()
+            export_fc = export_fc_df[["series_id", "MonthStart", "Model", "Forecast_Units"]].copy()
             export_fc["MonthStart"] = export_fc["MonthStart"].dt.strftime("%Y-%m")
-            export_rank = ranked.rename(columns={
+            export_rank = export_rank_df.rename(columns={
                 "Actual_Last12": "Last_12mo_Actual", "Forecast": f"Next_{h}mo_Forecast"})
             with pd.ExcelWriter(buf, engine="openpyxl") as w:
                 export_rank.to_excel(w, sheet_name="Ranked_Summary", index=False)
@@ -576,7 +580,7 @@ elif mode == "Compare":
             buf.seek(0)
             return buf.read()
 
-        xl_bytes = build_excel_compare(grain, h_months)
+        xl_bytes = build_excel_compare(g_fc_trim, ranked, h_months)
         st.download_button("Download", data=xl_bytes,
                             file_name=f"{grain}_comparison.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -707,15 +711,14 @@ elif mode == "Backtest":
                            f"(not enough history) and aren't shown above.")
 
     with st.expander("⬇️ Export backtest scores"):
-        @st.cache_data(show_spinner="Preparing file...")
-        def build_excel_backtest(grain_key: str):
+        def build_excel_backtest(grain_bt_df: pd.DataFrame):
             buf = io.BytesIO()
             with pd.ExcelWriter(buf, engine="openpyxl") as w:
-                grain_bt.to_excel(w, sheet_name="Backtest_Scores", index=False)
+                grain_bt_df.to_excel(w, sheet_name="Backtest_Scores", index=False)
             buf.seek(0)
             return buf.read()
 
-        xl_bytes = build_excel_backtest(grain)
+        xl_bytes = build_excel_backtest(grain_bt)
         st.download_button("Download", data=xl_bytes,
                             file_name=f"{grain}_backtest_scores.xlsx",
                             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -921,7 +924,7 @@ elif mode == "Dometic Summary":
             trust_col = "Trustworthy rate?" if "Trustworthy rate?" in tbl.columns else "Reliable rate?"
             if trust_col in tbl.columns:
                 tbl[trust_col] = tbl[trust_col].map({True: "✓", False: "⚠️ needs review"})
-                tbl = tbl.sort_values(trust_col)
+                tbl = tbl.sort_values(trust_col, ascending=False)
             if "Vs. peer segment median" in tbl.columns:
                 tbl["Vs. peer segment median"] = tbl["Vs. peer segment median"].map(
                     lambda v: f"{v:.0%}" if pd.notna(v) else "–")
@@ -957,20 +960,20 @@ elif mode == "Dometic Summary":
                                "in the same sales segment — concrete candidates for account outreach.")
 
         with st.expander("⬇️ Export to Excel"):
-            @st.cache_data(show_spinner="Preparing file...")
-            def build_excel_exec(h: int, n: int):
+            def build_excel_exec(existing_df: pd.DataFrame):
                 buf = io.BytesIO()
                 export_cols = ["Division", "ParentCustomerNumber", "Attach_Rate",
                               "Market_Forecast_Units", "Dometic_Forecast_Units", "Dometic_Actual_Units"]
-                if "Siblings_Sharing_Parent" in existing.columns:
+                if "Siblings_Sharing_Parent" in existing_df.columns:
                     export_cols.append("Siblings_Sharing_Parent")
-                export_tbl = existing[export_cols].copy()
+                export_cols = [c for c in export_cols if c in existing_df.columns]
+                export_tbl = existing_df[export_cols].copy()
                 with pd.ExcelWriter(buf, engine="openpyxl") as w:
                     export_tbl.to_excel(w, sheet_name="Dometic_Projection", index=False)
                 buf.seek(0)
                 return buf.read()
 
-            xl_bytes = build_excel_exec(exec_h_months, exec_top_n)
+            xl_bytes = build_excel_exec(existing)
             st.download_button("Download", data=xl_bytes,
                               file_name=f"Dometic_Sales_Projection_{exec_h_months}mo.xlsx",
                               mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

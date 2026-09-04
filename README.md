@@ -5,25 +5,48 @@ A Streamlit dashboard for forecasting RV retail sales by market, division, and R
 ## Setup
 
 ```bash
+# 1. Create virtual environment
 python -m venv .venv
+
+# 2. Activate virtual environment
+# On macOS / Linux:
+source .venv/bin/activate
+# On Windows:
 .venv\Scripts\activate
+
+# 3. Install dependencies
 pip install -r requirements.txt
+
+# 4. Configure environment variables
+cp .env.example .env
+# Edit .env with your local data paths and credentials
 ```
 
-Configure the data-source settings in a local `.env` file. Do not commit credentials or generated forecast files.
+> [!NOTE]
+> On macOS, `pymssql` and `lightgbm` may require system libraries (`brew install freetds libomp`).
 
-## Run
+## Pipeline Execution
 
-Generate the forecast data first:
+1. **(Optional) Run data quality audit**:
+   ```bash
+   python data_quality_check.py
+   ```
 
-```bash
-python run_forecast.py
-```
+2. **Generate the retail market forecast**:
+   ```bash
+   python run_forecast.py
+   ```
 
-Then start the dashboard:
+3. **(Optional) Generate Dometic sales attach-rate projections**:
+   ```bash
+   # Pull fresh OEM sales from D365 (requires SQL credentials in .env)
+   python pull_dometic_sales.py
+   
+   # Project Dometic units onto retail market forecast
+   python compute_attach_rate_forecast.py
+   ```
 
-```bash
-python -m streamlit run retail_forecast_dashboard.py
-```
-
-Optional Dometic projections require running `compute_attach_rate_forecast.py` after the sales data is available.
+4. **Launch the dashboard**:
+   ```bash
+   python -m streamlit run retail_forecast_dashboard.py
+   ```

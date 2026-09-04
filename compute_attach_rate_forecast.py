@@ -156,7 +156,8 @@ def compute_attach_rates(dometic_monthly: pd.DataFrame, market_history: pd.DataF
                                       (market_history["MonthStart"] >= cutoff)]
                        .groupby("series_id")["Units"].sum())
 
-    dometic_trailing = (dometic_monthly[dometic_monthly["SalesMonth"] >= cutoff]
+    dometic_trailing = (dometic_monthly[(dometic_monthly["SalesMonth"] >= cutoff) &
+                                        (dometic_monthly["SalesMonth"] <= last_date)]
                         .groupby("ParentCustomerNumber")["SalesQty"].sum())
 
     known_parent_ids = set(dometic_monthly["ParentCustomerNumber"].unique())
@@ -372,7 +373,9 @@ def main():
     n_projected = projection["Dometic_Forecast_Units"].notna().sum()
     print(f"  {n_projected:,} of {len(projection):,} forecast rows got a Dometic projection")
 
-    os.makedirs(os.path.dirname(args.out), exist_ok=True)
+    out_dir = os.path.dirname(args.out)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
 
     with pd.ExcelWriter(args.out, engine="openpyxl") as writer:
         summary = (projection.dropna(subset=["Dometic_Forecast_Units"])

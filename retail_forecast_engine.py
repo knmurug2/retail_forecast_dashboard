@@ -1024,7 +1024,7 @@ def _model_one_series(grain, sid, sub, exog, active_models, n_origins, min_real_
             "P90_Units": max(0.0, round(float(p90[i]), 2)) if p90 is not None else None,
             "Is_Selected_Model": True, "Tier": profile.tier,
             "History_Months": profile.n_months, "Backtest_Months": profile.backtest_months,
-            "Zero_Fraction": round(profile.zero_fraction, 3), "Note": profile.note,
+            "Zero_Fraction": round(profile.zero_fraction, 3) if pd.notna(profile.zero_fraction) else 0.0, "Note": profile.note,
             "Naive_wMAPE": naive_info.get("Naive_wMAPE"), "Beats_Naive": naive_info.get("Beats_Naive"),
             "Validation_wMAPE": validation_wmape,
             "Real_Data_Backtest": naive_info.get("Real_Data_Backtest"),
@@ -1046,7 +1046,7 @@ def _model_one_series(grain, sid, sub, exog, active_models, n_origins, min_real_
                 "P10_Units": None, "P90_Units": None,
                 "Is_Selected_Model": False, "Tier": profile.tier,
                 "History_Months": profile.n_months, "Backtest_Months": profile.backtest_months,
-                "Zero_Fraction": round(profile.zero_fraction, 3), "Note": profile.note,
+                "Zero_Fraction": round(profile.zero_fraction, 3) if pd.notna(profile.zero_fraction) else 0.0, "Note": profile.note,
                 "Naive_wMAPE": naive_info.get("Naive_wMAPE"), "Beats_Naive": naive_info.get("Beats_Naive"),
                 "Validation_wMAPE": validation_wmape,
                 "Real_Data_Backtest": naive_info.get("Real_Data_Backtest"),
@@ -1170,7 +1170,8 @@ def reconcile_bottom_up(forecast_df: pd.DataFrame, history_df: pd.DataFrame = No
     # from reconciliation. They still get their own direct forecast if looked
     # up individually; they just don't distort the Division/Type roll-up.
     first_fc_month = dt.groupby("series_id")["MonthStart"].min()
-    current_anchor = first_fc_month.mode().iloc[0]
+    total_start = sel[sel["Grain"] == "Total"]["MonthStart"].min() if (sel["Grain"] == "Total").any() else None
+    current_anchor = total_start if pd.notna(total_start) else first_fc_month.max()
     live_series = first_fc_month[first_fc_month == current_anchor].index
     n_total = dt["series_id"].nunique()
     n_live = len(live_series)
