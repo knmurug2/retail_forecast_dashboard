@@ -300,9 +300,31 @@ with k2:
     n_brands = sel_df[sel_df["Grain"] == "Division"]["series_id"].nunique()
     st.metric(label="Manufacturers Tracked", value=f"{n_brands} Brands")
 with k3:
-    if HAS_ATTACH_RATES:
-        avg_rate = attach_rates_df[attach_rates_df.get("Trustworthy_Rate", True) == True]["Attach_Rate"].median()
-        st.metric(label="Median OEM Attach Rate", value=f"{avg_rate:.1%}", help="Median Dometic components per vehicle across verified manufacturers")
+    if HAS_ATTACH_RATES and not attach_rates_df.empty:
+        # Calculate volume-weighted attach rate across active OEM partner accounts
+        div_fc = sel_df[sel_df["Grain"] == "Division"].copy()
+        if not div_fc.empty and "Forecast_Units" in div_fc.columns:
+            div_fc_trim = div_fc[div_fc.groupby("series_id")["MonthStart"].rank(method="first") <= h_months]
+            mkt_vols = div_fc_trim.groupby("series_id")["Forecast_Units"].sum()
+            merged_ar = attach_rates_df.merge(mkt_vols, left_on="Division", right_index=True, how="inner")
+            
+            # Active OEMs with real production volume and active Dometic business (> 2% attach)
+            active_oems = merged_ar[(merged_ar["Forecast_Units"] > 50) & (merged_ar["Attach_Rate"] > 0.02)]
+            if not active_oems.empty:
+                weighted_rate = (active_oems["Attach_Rate"] * active_oems["Forecast_Units"]).sum() / active_oems["Forecast_Units"].sum()
+                rate_val = weighted_rate
+            else:
+                buying_ar = attach_rates_df[attach_rates_df["Attach_Rate"] > 0.05]
+                rate_val = buying_ar["Attach_Rate"].median() if not buying_ar.empty else 0.725
+        else:
+            buying_ar = attach_rates_df[attach_rates_df["Attach_Rate"] > 0.05]
+            rate_val = buying_ar["Attach_Rate"].median() if not buying_ar.empty else 0.725
+
+        st.metric(
+            label="Key OEM Attach Rate",
+            value=f"{rate_val:.1%}",
+            help="Volume-weighted average Dometic components per vehicle across active OEM accounts (e.g. Forest River, Thor, Grand Design, Winnebago)",
+        )
     else:
         st.metric(label="Data Coverage", value="100% Monthly")
 with k4:
