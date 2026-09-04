@@ -1,0 +1,20 @@
+streamlit
+pandas
+numpy
+openpyxl
+plotly
+joblib
+pyarrow
+python-dotenv
+statsmodels
+pmdarima
+prophet
+xgboost
+lightgbm
+fredapi
+pymssql
+
+# Optional heavy models (skip if not needed)
+# timesfm
+# torch
+# chronos-forecasting

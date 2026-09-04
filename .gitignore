@@ -1,0 +1,19 @@
+.env
+.env.*
+!.env.example
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.pytest_cache/
+.streamlit/secrets.toml
+
+# Generated forecast data
+*.parquet
+run_meta.json
+
+# Local editor and OS files
+.vscode/
+.DS_Store
+Thumbs.db
