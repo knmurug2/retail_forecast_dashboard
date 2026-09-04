@@ -40,10 +40,20 @@ _load_env()
 # ---------------------------------------------------------------------------
 # CONFIG
 # ---------------------------------------------------------------------------
-DATA_PATH   = os.environ.get("DATA_PATH",
-              r"C:\Users\Karmur\OneDrive - Dometic Group\RV_Cust_Data.xlsx")
-PARQUET_DIR = os.environ.get("PARQUET_DIR",
-              r"C:\Users\Karmur\OneDrive - Dometic Group\PY Project Output\RetailForecast\parquet")
+def _resolve_path(env_key: str, default_win: str, default_rel: str) -> str:
+    if env_key in os.environ and os.environ[env_key]:
+        return os.environ[env_key]
+    if os.path.exists(default_win):
+        return default_win
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    return os.path.join(script_dir, default_rel)
+
+DATA_PATH   = _resolve_path("DATA_PATH",
+              r"C:\Users\Karmur\OneDrive - Dometic Group\RV_Cust_Data.xlsx",
+              "data/RV_Cust_Data.xlsx")
+PARQUET_DIR = _resolve_path("PARQUET_DIR",
+              r"C:\Users\Karmur\OneDrive - Dometic Group\PY Project Output\RetailForecast\parquet",
+              "parquet")
 FRED_API_KEY = os.environ.get("FRED_API_KEY", "")
 OWN_DIVISIONS = [d.strip() for d in os.environ.get("OWN_DIVISIONS", "").split(",") if d.strip()]
 
