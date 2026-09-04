@@ -33,9 +33,7 @@ venv.bak/
 .env.local
 .env.*.local
 
-# Generated forecast & data files
-*.parquet
-parquet/
+# Generated archives & raw spreadsheets (parquet/ is tracked for cloud dashboard)
 archive/
 output/
 *.xlsx
