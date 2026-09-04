@@ -1,0 +1,18 @@
+{
+  "run_timestamp": "2026-08-20T22:22:46.491063",
+  "forecast_rows": 32508,
+  "series_count": 1033,
+  "grains": [
+    "Total",
+    "Division",
+    "Type",
+    "Division_Type"
+  ],
+  "has_fred": true,
+  "has_market_share": true,
+  "own_divisions": [
+    "Dometic",
+    "DOMETIC GROUP"
+  ],
+  "parquet_dir": "C:\\Users\\Karmur\\OneDrive - Dometic Group\\PY Project Output\\RetailForecast\\parquet"
+}
