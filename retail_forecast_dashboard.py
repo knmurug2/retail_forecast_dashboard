@@ -321,9 +321,9 @@ with k3:
             rate_val = buying_ar["Attach_Rate"].median() if not buying_ar.empty else 0.725
 
         st.metric(
-            label="Key OEM Attach Rate",
-            value=f"{rate_val:.1%}",
-            help="Volume-weighted average Dometic components per vehicle across active OEM accounts (e.g. Forest River, Thor, Grand Design, Winnebago)",
+            label="OEM Content per Vehicle",
+            value=f"{rate_val:.2f} parts / RV",
+            help="Average Dometic component units (A/Cs, awnings, refrigerators, sanitation) installed per RV across active OEM partners (e.g. Forest River, Thor, Grand Design, Winnebago)",
         )
     else:
         st.metric(label="Data Coverage", value="100% Monthly")
