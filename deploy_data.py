@@ -12,14 +12,29 @@ import os
 import sys
 import subprocess
 
+# Configure safe UTF-8 output encoding for Windows terminals
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+if hasattr(sys.stderr, "reconfigure"):
+    try:
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+
 def run_step(cmd, desc):
     print("\n" + "=" * 60)
-    print(f"▶ {desc}")
+    print(f"[*] {desc}")
     print("=" * 60)
     ret = subprocess.run(cmd, shell=True)
     if ret.returncode != 0:
-        print(f"\n❌ Error during: {desc}")
+        print(f"\n[ERROR] Step failed: {desc}")
         sys.exit(ret.returncode)
+
 
 def main():
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -28,7 +43,7 @@ def main():
     os.makedirs(parquet_dir, exist_ok=True)
 
     print("=" * 60)
-    print("🚀 RV Retail Forecast - Production Data Deployment")
+    print("RV Retail Forecast - Production Data Deployment")
     print("=" * 60)
 
     # 1. Run the ML forecast pipeline
@@ -44,7 +59,7 @@ def main():
             "Computing Dometic OEM Attach Rates & Sales Projections"
         )
     except Exception as e:
-        print(f"⚠️ Note: Attach rate step skipped or completed with notice: {e}")
+        print(f"[NOTE] Attach rate step skipped or completed with notice: {e}")
 
     # 3. Stage parquet files in Git
     run_step(
@@ -62,9 +77,10 @@ def main():
     )
 
     print("\n" + "=" * 60)
-    print("🎉 SUCCESS! Production data uploaded.")
+    print("[SUCCESS] Production forecast data successfully uploaded!")
     print("Streamlit Cloud and Power BI will refresh automatically in ~15 seconds.")
     print("=" * 60)
+
 
 if __name__ == "__main__":
     main()
