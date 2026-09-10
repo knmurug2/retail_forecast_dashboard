@@ -427,36 +427,46 @@ tab_overview, tab_series, tab_compare, tab_dometic, tab_governance = st.tabs([
 # TAB 1: EXECUTIVE OVERVIEW
 # ===========================================================================
 with tab_overview:
-    st.subheader("Market Demand Trajectory")
+    st.subheader(f"Market Demand Trajectory ({units_str})")
     
+    # Scale plotting series if Dometic view lens is active
+    tot_hist_plot = tot_hist.copy()
+    tot_trim_plot = tot_trim.copy()
+    if show_dometic:
+        tot_hist_plot["Units"] = tot_hist_plot["Units"] * macro_rate
+        tot_trim_plot["Forecast_Units"] = tot_trim_plot["Forecast_Units"] * macro_rate
+        if "P10_Units" in tot_trim_plot.columns:
+            tot_trim_plot["P10_Units"] = tot_trim_plot["P10_Units"] * macro_rate
+            tot_trim_plot["P90_Units"] = tot_trim_plot["P90_Units"] * macro_rate
+
     # Trend Chart
     fig_overview = go.Figure()
     
     # Historical Actuals
     fig_overview.add_trace(go.Scatter(
-        x=tot_hist["MonthStart"], y=tot_hist["Units"],
-        mode="lines", name="Historical Market Demand",
+        x=tot_hist_plot["MonthStart"], y=tot_hist_plot["Units"],
+        mode="lines", name=f"Historical Demand ({units_str})",
         line=dict(color=ACTUAL_COLOR, width=2.5),
         hovertemplate="%{x|%b %Y}: <b>%{y:,.0f}</b> units<extra></extra>"
     ))
     
     # Confidence Band
-    if "P10_Units" in tot_trim.columns and tot_trim["P10_Units"].notna().any():
+    if "P10_Units" in tot_trim_plot.columns and tot_trim_plot["P10_Units"].notna().any():
         fig_overview.add_trace(go.Scatter(
-            x=pd.concat([tot_trim["MonthStart"], tot_trim["MonthStart"][::-1]]),
-            y=pd.concat([tot_trim["P90_Units"], tot_trim["P10_Units"][::-1]]),
+            x=pd.concat([tot_trim_plot["MonthStart"], tot_trim_plot["MonthStart"][::-1]]),
+            y=pd.concat([tot_trim_plot["P90_Units"], tot_trim_plot["P10_Units"][::-1]]),
             fill="toself", fillcolor=BAND_COLOR,
             line=dict(width=0), hoverinfo="skip", name="Confidence Band (P10–P90)", showlegend=True
         ))
     
     # Forecast Line
-    if not tot_hist.empty and not tot_trim.empty:
-        bridge_x = [tot_hist["MonthStart"].iloc[-1], tot_trim["MonthStart"].iloc[0]]
-        bridge_y = [tot_hist["Units"].iloc[-1], tot_trim["Forecast_Units"].iloc[0]]
+    if not tot_hist_plot.empty and not tot_trim_plot.empty:
+        bridge_x = [tot_hist_plot["MonthStart"].iloc[-1], tot_trim_plot["MonthStart"].iloc[0]]
+        bridge_y = [tot_hist_plot["Units"].iloc[-1], tot_trim_plot["Forecast_Units"].iloc[0]]
         fig_overview.add_trace(go.Scatter(x=bridge_x, y=bridge_y, mode="lines", showlegend=False, line=dict(color=FORECAST_COLOR, width=2, dash="dot")))
         
     fig_overview.add_trace(go.Scatter(
-        x=tot_trim["MonthStart"], y=tot_trim["Forecast_Units"],
+        x=tot_trim_plot["MonthStart"], y=tot_trim_plot["Forecast_Units"],
         mode="lines+markers", name=f"Forecast (Next {h_months}M)",
         line=dict(color=FORECAST_COLOR, width=2.5),
         hovertemplate="%{x|%b %Y}: <b>%{y:,.0f}</b> units (Forecast)<extra></extra>"
@@ -464,7 +474,7 @@ with tab_overview:
     
     fig_overview.update_layout(
         height=380, margin=dict(l=10, r=10, t=10, b=10),
-        xaxis_title="", yaxis_title="Units", hovermode="x unified",
+        xaxis_title="", yaxis_title=units_str, hovermode="x unified",
         legend=dict(orientation="h", y=1.12, x=0), plot_bgcolor="rgba(0,0,0,0)",
     )
     st.plotly_chart(fig_overview, use_container_width=True)
@@ -472,9 +482,32 @@ with tab_overview:
     st.markdown("#### Key Takeaways & Market Highlights")
     c_left, c_right = st.columns(2)
     with c_left:
-        st.info(f"📈 **Demand Outlook**: Total market demand is projected at **{next_fc_vol:,.0f} units** over the next {h_months} months ({yoy_growth:+.1f}% vs prior period).")
+        disp_vol = (next_fc_vol * macro_rate) if show_dometic else next_fc_vol
+        disp_label = "Dometic component demand" if show_dometic else "Total market retail demand"
+        st.info(f"📈 **Demand Outlook**: {disp_label} is projected at **{disp_vol:,.0f} units** over the next {h_months} months ({yoy_growth:+.1f}% vs prior period).")
     with c_right:
-        st.success(f"🎯 **Model Selection**: Total Market is governed by `{tot_trim['Model'].iloc[0] if not tot_trim.empty else 'Ensemble'}` with an empirical error band of $\pm${((tot_trim['P90_Units'].iloc[0]/tot_trim['Forecast_Units'].iloc[0] - 1)*100):.1f}%.")
+        st.success(f"🎯 **Model Selection**: Total Market is governed by `{tot_trim['Model'].iloc[0] if not tot_trim.empty else 'Ensemble'}` with an empirical confidence interval of $\pm${((tot_trim['P90_Units'].iloc[0]/tot_trim['Forecast_Units'].iloc[0] - 1)*100):.1f}%.")
+
+    # Excel Download for Executive Overview
+    def build_excel_overview(fc_export, hs_export):
+        buf = io.BytesIO()
+        fc_e = fc_export.copy()
+        hs_e = hs_export.copy()
+        fc_e["MonthStart"] = fc_e["MonthStart"].dt.strftime("%Y-%m")
+        hs_e["MonthStart"] = hs_e["MonthStart"].dt.strftime("%Y-%m")
+        with pd.ExcelWriter(buf, engine="openpyxl") as w:
+            fc_e.to_excel(w, sheet_name="Forecast_Overview", index=False)
+            hs_e.to_excel(w, sheet_name="Historical_Actuals", index=False)
+        buf.seek(0)
+        return buf.read()
+
+    xl_overview = build_excel_overview(tot_trim_plot[["MonthStart", "Forecast_Units"]], tot_hist_plot[["MonthStart", "Units"]])
+    st.download_button(
+        f"📥 Export Executive Overview Data ({units_str}) to Excel",
+        data=xl_overview,
+        file_name=f"Executive_RV_Forecast_Overview_{h_months}M.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
 
 
 # ===========================================================================
