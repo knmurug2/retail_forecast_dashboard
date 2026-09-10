@@ -219,14 +219,33 @@ backtest_detail_df = data.get("backtest_detail")
 sel_df = fc_df[fc_df["Is_Selected_Model"]].copy()
 
 HAS_ATTACH_RATES = attach_rates_df is not None and not attach_rates_df.empty
-_attach_rate_map = dict(zip(attach_rates_df["Division"], attach_rates_df["Attach_Rate"])) if HAS_ATTACH_RATES else {}
+_attach_rate_map = {}
+_attach_rate_map_norm = {}
+
+if HAS_ATTACH_RATES:
+    for _, r in attach_rates_df.iterrows():
+        div_name = str(r["Division"])
+        rate_val = r["Attach_Rate"]
+        if pd.notna(rate_val):
+            _attach_rate_map[div_name] = float(rate_val)
+            # Normalized key: lowercase, stripped, no extra whitespace
+            norm_key = " ".join(div_name.lower().strip().split())
+            _attach_rate_map_norm[norm_key] = float(rate_val)
 
 def get_attach_rate(series_id: str, grain: str):
     if not HAS_ATTACH_RATES or grain not in ("Division", "Division_Type"):
         return None
     div = series_id.split(" | ", 1)[0] if grain == "Division_Type" else series_id
-    rate = _attach_rate_map.get(div)
-    return rate if pd.notna(rate) else None
+    if div in _attach_rate_map:
+        return _attach_rate_map[div]
+    norm_k = " ".join(div.lower().strip().split())
+    if norm_k in _attach_rate_map_norm:
+        return _attach_rate_map_norm[norm_k]
+    # Check partial / clean suffix matches
+    for k, v in _attach_rate_map_norm.items():
+        if k in norm_k or norm_k in k:
+            return v
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -291,11 +310,32 @@ k1, k2, k3, k4 = st.columns(4)
 units_str = "Dometic Units (est.)" if show_dometic else "Market RV Units"
 
 with k1:
-    st.metric(
-        label=f"Overall Market ({horizon_choice})",
-        value=f"{next_fc_vol:,.0f} units",
-        delta=f"{yoy_growth:+.1f}% vs Trailing {h_months}M",
-    )
+    if show_dometic:
+        # Scale to macro Dometic demand
+        macro_rate = 1.63
+        if HAS_ATTACH_RATES and not attach_rates_df.empty:
+            div_fc_temp = sel_df[sel_df["Grain"] == "Division"]
+            if not div_fc_temp.empty:
+                m_temp = attach_rates_df.merge(div_fc_temp.groupby("series_id")["Forecast_Units"].sum(), left_on="Division", right_index=True, how="inner")
+                act_temp = m_temp[(m_temp["Forecast_Units"] > 50) & (m_temp["Attach_Rate"] > 0.02)]
+                if not act_temp.empty:
+                    macro_rate = (act_temp["Attach_Rate"] * act_temp["Forecast_Units"]).sum() / act_temp["Forecast_Units"].sum()
+        k1_vol = next_fc_vol * macro_rate
+        k1_prev = trailing_12m * macro_rate
+        k1_g = ((k1_vol / k1_prev - 1) * 100) if k1_prev > 0 else 0
+        st.metric(
+            label=f"Dometic Projected Demand ({horizon_choice})",
+            value=f"{k1_vol:,.0f} units",
+            delta=f"{k1_g:+.1f}% vs Trailing {h_months}M",
+            help="Estimated total Dometic component units across all OEM vehicles"
+        )
+    else:
+        st.metric(
+            label=f"Overall Market ({horizon_choice})",
+            value=f"{next_fc_vol:,.0f} units",
+            delta=f"{yoy_growth:+.1f}% vs Trailing {h_months}M",
+            help="Total RV retail registration forecast"
+        )
 with k2:
     n_brands = sel_df[sel_df["Grain"] == "Division"]["series_id"].nunique()
     st.metric(label="Manufacturers Tracked", value=f"{n_brands} Brands")
@@ -610,6 +650,13 @@ with tab_compare:
     g_fc_trim = g_fc[g_fc.groupby("series_id")["MonthStart"].rank(method="first") <= h_months].copy()
     g_hist = hs_df[hs_df["Grain"] == cmp_grain].copy()
 
+    # Apply Attach Rate if Dometic view lens is active
+    if show_dometic and cmp_grain in ("Division", "Division_Type"):
+        g_fc_trim["_rate"] = g_fc_trim["series_id"].apply(lambda s: get_attach_rate(s, cmp_grain) or 0.0)
+        g_fc_trim["Forecast_Units"] = g_fc_trim["Forecast_Units"] * g_fc_trim["_rate"]
+        g_hist["_rate"] = g_hist["series_id"].apply(lambda s: get_attach_rate(s, cmp_grain) or 0.0)
+        g_hist["Units"] = g_hist["Units"] * g_hist["_rate"]
+
     # Ranking computation
     ranked = (g_fc_trim.groupby("series_id")["Forecast_Units"].sum().sort_values(ascending=False).reset_index().rename(columns={"Forecast_Units": "Forecast"}))
     
@@ -618,6 +665,10 @@ with tab_compare:
     act_12 = g_hist_12.groupby("series_id")["Units"].sum().reset_index().rename(columns={"Units": "Actual_Last12"})
     ranked = ranked.merge(act_12, on="series_id", how="left").fillna(0)
     ranked["YoY_Growth"] = ((ranked["Forecast"] / ranked["Actual_Last12"] - 1) * 100).replace([np.inf, -np.inf], 0).fillna(0)
+    
+    # Attach rate display column
+    if cmp_grain in ("Division", "Division_Type"):
+        ranked["Attach_Rate"] = ranked["series_id"].apply(lambda s: get_attach_rate(s, cmp_grain))
     
     ranked_top = ranked.head(top_n)
 
@@ -640,9 +691,17 @@ with tab_compare:
     st.plotly_chart(fig_bar, use_container_width=True)
 
     with st.expander("📋 View Summary Table & Download"):
-        st.dataframe(ranked.rename(columns={
-            "series_id": "Brand / Series", "Actual_Last12": "Trailing 12M Actual",
-            "Forecast": f"Next {h_months}M Forecast", "YoY_Growth": "YoY Growth %"
+        disp_ranked = ranked.copy()
+        disp_ranked["Actual_Last12"] = disp_ranked["Actual_Last12"].map("{:,.0f}".format)
+        disp_ranked["Forecast"] = disp_ranked["Forecast"].map("{:,.0f}".format)
+        disp_ranked["YoY_Growth"] = disp_ranked["YoY_Growth"].map("{:+.1f}%".format)
+        if "Attach_Rate" in disp_ranked.columns:
+            disp_ranked["Attach_Rate"] = disp_ranked["Attach_Rate"].apply(lambda x: f"{x:.2f} parts/RV" if pd.notna(x) else "-")
+            
+        st.dataframe(disp_ranked.rename(columns={
+            "series_id": "Brand / Series", "Actual_Last12": f"Trailing 12M ({units_str})",
+            "Forecast": f"Next {h_months}M Forecast ({units_str})", "YoY_Growth": "YoY Growth %",
+            "Attach_Rate": "OEM Attach Rate"
         }), hide_index=True, use_container_width=True)
 
 
